@@ -1,19 +1,19 @@
 import makeWASocket, { useMultiFileAuthState } from '@whiskeysockets/baileys'
 import P from 'pino'
 import fs from 'fs'
-import fetch from 'node-fetch'
 
-const PHONE = process.env.PHONE_NUMBER?.replace(/\D/g,'') // <-- CISLO KAMOSE
+const PHONE = process.env.PHONE_NUMBER?.replace(/\D/g,'')
 const CHANNEL_NAME = 'Vtipy A Memes'
 const CODE = 'LUCKY123'
 const POSTED_FILE = './auth/posted.json'
 
-console.log(`Kanál: ${CHANNEL_NAME} - 24 followers`)
+console.log(`Bot pro kanal: ${CHANNEL_NAME}`)
 console.log(`Cislo: ${PHONE}`)
 
 let posted = []
 try { if (fs.existsSync(POSTED_FILE)) posted = JSON.parse(fs.readFileSync(POSTED_FILE, 'utf8')) } catch {}
 const savePosted = (id) => {
+  fs.mkdirSync('./auth', { recursive: true })
   posted.push(id)
   if (posted.length > 1000) posted = posted.slice(-1000)
   fs.writeFileSync(POSTED_FILE, JSON.stringify(posted))
@@ -41,14 +41,17 @@ let CHANNEL_JID = null
 sock.ev.on('connection.update', async ({ connection }) => {
   if (!state.creds.registered && PHONE) {
     await new Promise(r=>setTimeout(r,3000))
-    try { await sock.requestPairingCode(PHONE, CODE); console.log(`>>> NA KAMOSOVO MOBILU ZADEJ: ${CODE} <<<`) } catch{}
+    try { 
+      await sock.requestPairingCode(PHONE, CODE)
+      console.log(`>>> NA MOBILU ZADEJ KOD: ${CODE} <<<`)
+    } catch{}
   }
   if (connection === 'open') {
-    console.log('✅ PROPOJENO NA KAMOSOVO UCTU!')
+    console.log('✅ PROPOJENO!')
 
-    // automaticky najde kanal Vtipy A Memes
-    sock.ev.on('chats.set', async ({chats}) => {
+    sock.ev.on('chats.set', ({chats}) => {
       for (const c of chats) {
+        console.log(`CHAT: ${c.name} -> ${c.id}`)
         if (c.name?.toLowerCase().includes('vtipy') && c.name?.toLowerCase().includes('memes')) {
           CHANNEL_JID = c.id
           console.log(`✅ NASLO KANAL: ${c.name} = ${c.id}`)
@@ -56,36 +59,19 @@ sock.ev.on('connection.update', async ({ connection }) => {
       }
     })
 
-    // zalozni vypis
-    setTimeout(async () => {
-      try {
-        const groups = await sock.groupFetchAllParticipating()
-        for (let id in groups) {
-          console.log(`GROUP: ${groups[id].subject} -> ${id}`)
-          if (groups[id].subject?.toLowerCase().includes('vtipy')) CHANNEL_JID = id
-        }
-      } catch{}
-    }, 4000)
-
     const postuj = async () => {
-      if (!CHANNEL_JID) { console.log('Cekam na JID kanalu Vtipy A Memes...'); return }
+      if (!CHANNEL_JID) { console.log('Cekam na JID...'); return }
       const meme = await getMeme()
-      if (!meme) { console.log('Zadne nove meme'); return }
-      
-      // s podpisem -LuckyJelen jak chces
+      if (!meme) return
       const caption = `${meme.title}\n\n-LuckyJelen`
-      
       try {
         await sock.sendMessage(CHANNEL_JID, { image: { url: meme.url }, caption })
         savePosted(meme.id)
-        console.log(`✅ POSLANO do Vtipy A Memes: ${meme.id}`)
-      } catch(e){ console.log('Chyba posilani:', e.message, 'JID:', CHANNEL_JID) }
+        console.log(`✅ POSLANO: ${meme.id}`)
+      } catch(e){ console.log('Chyba:', e.message) }
     }
 
-    // prvni hned po 10s
-    setTimeout(postuj, 10000)
-    
-    // pak 1-2x denne = 10-14h nahodne
+    setTimeout(postuj, 15000)
     const plan = () => {
       const h = 10 + Math.random()*4
       console.log(`Dalsi meme za ${h.toFixed(1)}h`)
