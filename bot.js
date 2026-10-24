@@ -2,7 +2,6 @@ import makeWASocket, {
     useMultiFileAuthState
 } from '@whiskeysockets/baileys';
 
-import qrcode from 'qrcode-terminal';
 import pino from 'pino';
 
 const CHANNEL_URL =
@@ -14,46 +13,44 @@ async function startBot() {
 
     const sock = makeWASocket({
         auth: state,
-        logger: pino({ level: 'silent' }),
-        printQRInTerminal: false
+        logger: pino({ level: 'silent' })
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', async ({ qr, connection }) => {
-        if (qr) {
-            console.log('Naskenuj QR kód v WhatsAppu:');
-            qrcode.generate(qr, { small: true });
-        }
-
+    sock.ev.on('connection.update', async ({ connection }) => {
         if (connection === 'open') {
             console.log('WhatsApp připojen!');
 
             try {
-                const inviteCode = CHANNEL_URL
-                    .split('/')
-                    .pop()
-                    .split('?')[0];
+               7o const invite = CHANNEL_URL
+                    .split('/channel/')[1]
+                    .split(/[?#]/)[0];
 
                 const channel = await sock.newsletterMetadata(
                     'invite',
-                    inviteCode
+                    invite
                 );
 
-                console.log('Název kanálu:', channel?.name);
-                console.log('ID kanálu:', channel?.id);
+                console.log('Kanál:', channel.name);
+                console.log('ID:', channel.id);
             } catch (error) {
-                console.error(
-                    'Nepodařilo se načíst kanál:',
-                    error.message
-                );
+                console.log('Chyba:', error.message);
             }
-        }
 
-        if (connection === 'close') {
-            console.log('WhatsApp spojení bylo ukončeno.');
+            await saveCreds();
+            setTimeout(() => process.exit(0), 2000);
         }
     });
+
+    if (!state.creds.registered) {
+        const phone = process.env.WA_PHONE_NUMBER;
+
+        if (!phone) throw new Error('Chybí telefonní číslo');
+
+        const code = await sock.requestPairingCode(phone);
+        console.log('PÁROVACÍ KÓD:', code);
+    }
 }
 
 startBot().catch(console.error);
