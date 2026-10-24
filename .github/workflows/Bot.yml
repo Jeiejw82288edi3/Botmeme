@@ -1,0 +1,27 @@
+name: LuckyJelen Bot
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 8,18 * * *'
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: node server.js
+        env:
+          PHONE_NUMBER: ${{ secrets.PHONE_NUMBER }}
+          CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+      - name: Uloz auth
+        run: |
+          git config user.name "bot"
+          git config user.email "bot@bot.com"
+          git add auth h.json || true
+          git commit -m "save auth" || true
+          git push || true 
