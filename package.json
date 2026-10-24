@@ -1,8 +1,14 @@
 {
-  "name": "botmeme",
+  "name": "luckyjelen-meme-bot",
+  "version": "1.0.0",
+  "private": true,
   "type": "module",
+  "scripts": {
+    "start": "node bot.js"
+  },
   "dependencies": {
-    "@whiskeysockets/baileys": "latest",
-    "pino": "^9.0.0"
+    "@whiskeysockets/baileys": "6.7.24",
+    "pino": "^9.6.0",
+    "qrcode-terminal": "^0.12.0"
   }
 }
