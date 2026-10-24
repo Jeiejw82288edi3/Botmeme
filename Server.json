@@ -1,0 +1,82 @@
+import makeWASocket, { useMultiFileAuthState, makeCacheableSignalKeyStore, delay } from '@whiskeysockets/baileys'
+import fs from 'fs'
+import axios from 'axios'
+import http from 'http'
+
+const PHONE = process.env.PHONE_NUMBER || '420777123456'
+const CHANNEL_ID = process.env.CHANNEL_ID
+const SIGN = '-LuckyJelen'
+
+async function getMeme() {
+  let h = []
+  try { if (fs.existsSync('./h.json')) h = JSON.parse(fs.readFileSync('./h.json')) } catch {}
+  const urls = [
+    'https://www.reddit.com/r/czechmemes/new.json?limit=50',
+    'https://www.reddit.com/r/SlovakiaMeme/new.json?limit=50'
+  ]
+  for (let api of urls) {
+    try {
+      const r = await axios.get(api, { headers: { 'User-Agent': 'LuckyJelen' } })
+      for (let p of r.data.data.children) {
+        let d = p.data
+        if (h.includes(d.id) || d.over_18) continue
+        let isV = d.is_video && d.media?.reddit_video?.duration <= 60
+        let isI = d.url?.match(/\.(jpg|jpeg|png)$/)
+        if (!isI && !isV) continue
+        let url = isV ? d.media.reddit_video.fallback_url : d.url
+        h.push(d.id); if (h.length > 500) h = h.slice(-500)
+        fs.writeFileSync('./h.json', JSON.stringify(h))
+        return { url, cap: `${d.title}\n\n${SIGN}`, isV }
+      }
+    } catch {}
+  }
+  return null
+}
+
+async function start() {
+  const { state, saveCreds } = await useMultiFileAuthState('auth')
+  const sock = makeWASocket({
+    auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, console.log) },
+    printQRInTerminal: false,
+    browser: ['LuckyJelen', 'Chrome', '1.0']
+  })
+  sock.ev.on('creds.update', saveCreds)
+
+  if (!state.creds.registered) {
+    await delay(2000)
+    const code = await sock.requestPairingCode(PHONE)
+    console.log('KOD:', code)
+  }
+
+  sock.ev.on('connection.update', async (u) => {
+    if (u.connection === 'open') {
+      console.log('PRIPOJENO na', CHANNEL_ID)
+      if (!CHANNEL_ID) {
+        try {
+          const l = await sock.newsletterFetchAll()
+          l.forEach(c => console.log(c.name + ' => ' + c.id))
+        } catch {}
+      }
+      while (true) {
+        if (!CHANNEL_ID) { await delay(10000); continue }
+        try {
+          const m = await getMeme()
+          if (m) {
+            if (m.isV) await sock.sendMessage(CHANNEL_ID, { video: { url: m.url }, caption: m.cap })
+            else await sock.sendMessage(CHANNEL_ID, { image: { url: m.url }, caption: m.cap })
+            console.log('Postnuto')
+          }
+        } catch (e) { console.log(e.message) }
+        await delay(12*60*60*1000)
+      }
+    }
+  })
+
+  sock.ev.on('messages.upsert', ({ messages }) => {
+    for (let mm of messages) {
+      if (mm.key.remoteJid.includes('@newsletter')) console.log('CHANNEL_ID:', mm.key.remoteJid)
+    }
+  })
+}
+start()
+http.createServer((_,res)=>res.end('ok')).listen(process.env.PORT||3000) 
