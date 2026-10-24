@@ -23,7 +23,7 @@ async function startBot() {
             console.log('WhatsApp připojen!');
 
             try {
-               7o const invite = CHANNEL_URL
+             const invite = CHANNEL_URL
                     .split('/channel/')[1]
                     .split(/[?#]/)[0];
 
