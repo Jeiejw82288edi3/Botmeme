@@ -1,0 +1,65 @@
+name: WhatsApp Pair
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm install
+
+      - name: Restore session
+        uses: actions/cache/restore@v4
+        with:
+          path: .wa-auth.enc
+          key: wa-auth-${{ github.run_id }}
+          restore-keys: |
+            wa-auth-
+
+      - name: Decrypt session
+        env:
+          AUTH_ENCRYPTION_KEY: ${{ secrets.AUTH_ENCRYPTION_KEY }}
+        run: |
+          if [ -f .wa-auth.enc ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 \
+              -in .wa-auth.enc \
+              -out auth.tar.gz \
+              -pass env:AUTH_ENCRYPTION_KEY
+            tar -xzf auth.tar.gz
+            rm auth.tar.gz
+          fi
+
+      - name: Connect WhatsApp
+        env:
+          WA_PHONE_NUMBER: ${{ secrets.WA_PHONE_NUMBER }}
+        run: timeout 180s npm start
+        continue-on-error: true
+
+      - name: Encrypt session
+        env:
+          AUTH_ENCRYPTION_KEY: ${{ secrets.AUTH_ENCRYPTION_KEY }}
+        run: |
+          node -e "const c=require('./auth_info/creds.json'); if(!c.registered) process.exit(1)"
+          tar -czf auth.tar.gz auth_info
+          openssl enc -aes-256-cbc -salt -pbkdf2 \
+            -in auth.tar.gz \
+            -out .wa-auth.enc \
+            -pass env:AUTH_ENCRYPTION_KEY
+          rm auth.tar.gz
+
+      - uses: actions/cache/save@v4
+        with:
+          path: .wa-auth.enc
+          key: wa-auth-${{ github.run_id }}
