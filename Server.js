@@ -1,115 +1,61 @@
-import makeWASocket, { useMultiFileAuthState, makeCacheableSignalKeyStore, delay } from '@whiskeysockets/baileys'
-import fs from 'fs'
-import axios from 'axios'
+import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys'
+import P from 'pino'
 
-const PHONE = process.env.PHONE_NUMBER
-const CHANNEL_ID = process.env.CHANNEL_ID
-const SIGN = '-LuckyJelen'
+console.log('START BOT')
 
-async function getMeme() {
-  let h = []
-  try { 
-    if (fs.existsSync('./h.json')) {
-      h = JSON.parse(fs.readFileSync('./h.json'))
-    }
-  } catch {}
-  
-  const apis = [
-    'https://www.reddit.com/r/czechmemes/new.json?limit=50',
-    'https://www.reddit.com/r/SlovakiaMeme/new.json?limit=50'
-  ]
-  
-  for (let api of apis) {
-    try {
-      const r = await axios.get(api, { headers: { 'User-Agent': 'LuckyJelen/1.0' } })
-      for (let p of r.data.data.children) {
-        let d = p.data
-        if (h.includes(d.id) || d.over_18) continue
-        
-        let isV = d.is_video && d.media?.reddit_video?.duration <= 60
-        let isI = d.url?.match(/\.(jpg|jpeg|png)$/)
-        if (!isI && !isV) continue
-        
-        let url = isV ? d.media.reddit_video.fallback_url : d.url
-        h.push(d.id)
-        if (h.length > 500) h = h.slice(-500)
-        fs.writeFileSync('./h.json', JSON.stringify(h))
-        
-        return { url, cap: `${d.title}\n\n${SIGN}`, isV }
-      }
-    } catch (e) {
-      console.log('Reddit chyba', e.message)
-    }
-  }
-  return null
+const phone = process.env.PHONE_NUMBER
+const channel = process.env.CHANNEL_ID
+
+console.log('PHONE:', phone ? 'OK ' + phone : 'CHYBI - nastav v Secrets')
+console.log('CHANNEL:', channel ? 'OK' : 'CHYBI')
+
+if (!phone) {
+  console.log('NENI NASTAVENE PHONE_NUMBER v Secrets -> koncim ale bez chyby')
+  process.exit(0)
 }
 
-async function start() {
-  const { state, saveCreds } = await useMultiFileAuthState('auth')
-  
-  const sock = makeWASocket({
-    auth: {
-      creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, console.log)
-    },
-    printQRInTerminal: false,
-    browser: ['LuckyJelen', 'Chrome', '1.0']
-  })
-  
-  sock.ev.on('creds.update', saveCreds)
+const { state, saveCreds } = await useMultiFileAuthState('./auth')
 
-  if (!state.creds.registered) {
-    await delay(3000)
-    console.log('ZADAM KOD PRO CISLO:', PHONE)
-    const code = await sock.requestPairingCode(PHONE)
-    console.log('============================')
-    console.log('KOD PRO WHATSAPP:', code)
-    console.log('============================')
-    console.log('Jdi do WhatsApp -> Propojena zarizeni -> Propojit pomoci tel. cisla')
-    await delay(70000)
+const sock = makeWASocket({
+  auth: state,
+  logger: P({ level: 'silent' }),
+  printQRInTerminal: false
+})
+
+if (!sock.authState.creds.registered) {
+  console.log('ZADAM PAIRING CODE...')
+  try {
+    const code = await sock.requestPairingCode(phone)
+    console.log('================================')
+    console.log('TVUJ KOD: ' + code)
+    console.log('Zadej ho ve WhatsApp: Propojena zarizeni -> Propojit zarizeni -> Propojit s cislem')
+    console.log('================================')
+  } catch (e) {
+    console.log('Chyba pairing:', e.message)
   }
+}
 
-  sock.ev.on('connection.update', async (u) => {
-    const { connection } = u
-    if (connection === 'open') {
-      console.log('✅ PRIPOJENO!')
-      
-      if (!CHANNEL_ID) {
-        console.log('CHYBI CHANNEL_ID - pridam vypis kanalu')
-        try {
-          const list = await sock.newsletterFetchAll()
-          list.forEach(c => console.log(`${c.name} => ${c.id}`))
-        } catch {}
-      }
-      
+sock.ev.on('creds.update', saveCreds)
+
+sock.ev.on('connection.update', async (u) => {
+  console.log('Connection:', u)
+  if (u.connection === 'open') {
+    console.log('PRIPOJENO!')
+    if (channel) {
       try {
-        const m = await getMeme()
-        if (m && CHANNEL_ID) {
-          if (m.isV) {
-            await sock.sendMessage(CHANNEL_ID, { video: { url: m.url }, caption: m.cap })
-          } else {
-            await sock.sendMessage(CHANNEL_ID, { image: { url: m.url }, caption: m.cap })
-          }
-          console.log('✅ POSTNUTO:', m.cap)
-        } else {
-          console.log('Zadny meme nebo chybi CHANNEL_ID')
-        }
-      } catch (e) {
-        console.log('Chyba post:', e.message)
-      }
-      
-      await delay(5000)
-      process.exit(0)
+        await sock.sendMessage(channel, { text: 'Bot jede! Jelen Lucky 🦌' })
+        console.log('Zprava odeslana do kanalu')
+      } catch (e) { console.log('Chyba kanal:', e.message) }
     }
-  })
-  
-  sock.ev.on('messages.upsert', ({ messages }) => {
-    for (let mm of messages) {
-      if (mm.key.remoteJid.includes('@newsletter')) {
-        console.log('!!! TVOJE CHANNEL_ID:', mm.key.remoteJid)
-      }
-    }
-  })
-}
+  }
+})
 
-start()
+sock.ev.on('messages.upsert', async (m) => {
+  console.log('Prisla zprava', JSON.stringify(m.messages[0]?.message))
+})
+
+// aby to bezelo 2 minuty a pak skoncilo
+setTimeout(() => {
+  console.log('KONEC, ukladam auth')
+  process.exit(0)
+}, 120000)
